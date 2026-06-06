@@ -21,6 +21,13 @@ public final class USBDevice: @unchecked Sendable {
 
     static let log = Logger(subsystem: "com.Ricky.Android-File-Transfer", category: "USB")
 
+    /// IOUSBHost dispatches async I/O completions on this queue. It must be user-initiated so the
+    /// high-QoS transfer thread that blocks on those completions (the `DispatchSemaphore` /
+    /// `DispatchGroup` waits in `writeDataPhaseStreaming`) never waits on a lower-QoS thread —
+    /// otherwise the Thread Performance Checker flags a priority inversion. Pipes copied from the
+    /// interface inherit this queue.
+    private static let ioQueue = DispatchQueue(label: "com.Ricky.MTPKit.usb-io", qos: .userInitiated)
+
     private let interface: IOUSBHostInterface
     private let bulkOut: IOUSBHostPipe
     private let bulkIn: IOUSBHostPipe
@@ -70,7 +77,7 @@ public final class USBDevice: @unchecked Sendable {
         let options: IOUSBHostObjectInitOptions = seize ? .deviceSeize : []
         let interface: IOUSBHostInterface
         do {
-            interface = try IOUSBHostInterface(__ioService: service, options: options, queue: nil, interestHandler: nil)
+            interface = try IOUSBHostInterface(__ioService: service, options: options, queue: Self.ioQueue, interestHandler: nil)
         } catch {
             log.error("Open interface failed: \(error.localizedDescription, privacy: .public)")
             throw MTPError.usb("開啟 USB 介面失敗：\(error.localizedDescription)")
