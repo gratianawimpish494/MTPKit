@@ -53,4 +53,4 @@ Both USB and Wi-Fi backends conform to `DeviceTransport`, so they're interchange
 
 ## License
 
-[MIT](LICENSE) © 2026 Ricky Chuang
+This package is [MIT licensed](https://github.com/5j54d93/MTPKit/blob/main/LICENSE).
