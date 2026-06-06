@@ -5,7 +5,7 @@ A dependency-free Swift package for talking to Android devices from macOS — br
 ## Features
 
 - **MTP over USB**, spoken directly through `IOUSBHost` — no `libmtp`, no C dependencies.
-- **ADB over Wi-Fi** transport, with QR / pairing-code / IP pairing and mDNS auto-discovery.
+- **ADB over Wi-Fi** transport, with QR／pairing-code／IP pairing and mDNS auto-discovery.
 - A single `DeviceTransport` protocol for both backends, plus a `MockTransport` for tests and previews.
 - `async`/`await` throughout, `Sendable` value types, and a real-time `DeviceChange` event stream.
 - Streaming up/download with progress reporting; handles files larger than 4 GB.
@@ -18,7 +18,7 @@ A dependency-free Swift package for talking to Android devices from macOS — br
 
 ## Installation
 
-Swift Package Manager:
+Swift Package Manager：
 
 ```swift
 .package(url: "https://github.com/5j54d93/MTPKit.git", from: "0.1.0")
@@ -31,7 +31,7 @@ Then add `"MTPKit"` to your target's dependencies.
 ```swift
 import MTPKit
 
-// USB / MTP
+// USB／MTP
 guard let transport = await MTPTransport.discover() else { return }
 let storages = try await transport.storages()
 let root = try await transport.listChildren(of: nil, in: storages[0].id)
