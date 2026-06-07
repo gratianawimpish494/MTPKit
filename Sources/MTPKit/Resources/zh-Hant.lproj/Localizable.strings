@@ -23,7 +23,7 @@
 "err.noDevice" = "找不到 Android 裝置";
 "err.interfaceNotFound" = "找不到 MTP 介面，請確認手機已切換到「檔案傳輸」模式";
 "err.protocolError" = "通訊協定錯誤：%@";
-"err.deviceStalled" = "與裝置的連線卡住了，正在嘗試自動重置…";
+"err.deviceStalled" = "裝置沒有回應，請重試。";
 "err.unknown" = "未知錯誤";
 
 /* TransportError cases */
