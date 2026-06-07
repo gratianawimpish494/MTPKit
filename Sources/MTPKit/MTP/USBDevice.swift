@@ -32,14 +32,18 @@ public final class USBDevice: @unchecked Sendable {
     private let bulkOut: IOUSBHostPipe
     private let bulkIn: IOUSBHostPipe
     private let interruptIn: IOUSBHostPipe?
+    /// Max packet size of the bulk OUT endpoint (512 on HS, 1024 on SS). Needed to know when a
+    /// data phase whose length is an exact multiple requires a terminating Zero-Length Packet.
+    private let bulkOutMaxPacket: Int
     public let info: Info
 
     private init(interface: IOUSBHostInterface, bulkOut: IOUSBHostPipe, bulkIn: IOUSBHostPipe,
-                 interruptIn: IOUSBHostPipe?, info: Info) {
+                 interruptIn: IOUSBHostPipe?, bulkOutMaxPacket: Int, info: Info) {
         self.interface = interface
         self.bulkOut = bulkOut
         self.bulkIn = bulkIn
         self.interruptIn = interruptIn
+        self.bulkOutMaxPacket = max(1, bulkOutMaxPacket)
         self.info = info
     }
 
@@ -92,6 +96,7 @@ public final class USBDevice: @unchecked Sendable {
         var bulkOutAddr: Int?
         var bulkInAddr: Int?
         var interruptInAddr: Int?
+        var bulkOutMaxPacket = 512
 
         var current = UnsafeRawPointer(ifaceDesc).assumingMemoryBound(to: IOUSBDescriptorHeader.self)
         while let ep = IOUSBGetNextEndpointDescriptor(config, ifaceDesc, current) {
@@ -99,7 +104,11 @@ public final class USBDevice: @unchecked Sendable {
             let type = IOUSBGetEndpointType(ep)          // 2 = bulk, 3 = interrupt (USB bmAttributes)
             let isIn = (address & 0x80) != 0
             switch (type, isIn) {
-            case (2, false): bulkOutAddr = address
+            case (2, false):
+                bulkOutAddr = address
+                // wMaxPacketSize low 11 bits = packet size for bulk (bits 11–12 are HS high-
+                // bandwidth, irrelevant for bulk). Descriptors are little-endian = native here.
+                bulkOutMaxPacket = Int(ep.pointee.wMaxPacketSize & 0x07FF)
             case (2, true): bulkInAddr = address
             case (3, true): interruptInAddr = address
             default: break
@@ -121,8 +130,9 @@ public final class USBDevice: @unchecked Sendable {
             product: strProp(service, "USB Product Name") ?? "Android",
             bulkOutAddress: outA, bulkInAddress: inA, interruptInAddress: interruptInAddr
         )
-        log.info("Opened MTP interface out=0x\(String(outA, radix: 16)) in=0x\(String(inA, radix: 16)) intr=\(interruptInAddr.map { "0x" + String($0, radix: 16) } ?? "none", privacy: .public)")
-        return USBDevice(interface: interface, bulkOut: bulkOut, bulkIn: bulkIn, interruptIn: interruptIn, info: info)
+        log.info("Opened MTP interface out=0x\(String(outA, radix: 16)) in=0x\(String(inA, radix: 16)) intr=\(interruptInAddr.map { "0x" + String($0, radix: 16) } ?? "none", privacy: .public) mps=\(bulkOutMaxPacket)")
+        return USBDevice(interface: interface, bulkOut: bulkOut, bulkIn: bulkIn, interruptIn: interruptIn,
+                         bulkOutMaxPacket: bulkOutMaxPacket, info: info)
     }
 
     // MARK: Bulk I/O
@@ -142,6 +152,7 @@ public final class USBDevice: @unchecked Sendable {
             do {
                 try bulkOut.__sendIORequest(with: buffer, bytesTransferred: &transferred, completionTimeout: timeout)
             } catch {
+                recoverHalt(bulkOut, after: error)
                 throw Self.mapIOError(error)
             }
             if transferred != slice.count {
@@ -159,7 +170,25 @@ public final class USBDevice: @unchecked Sendable {
         do {
             try bulkOut.__sendIORequest(with: buffer, bytesTransferred: &transferred, completionTimeout: timeout)
         } catch {
+            recoverHalt(bulkOut, after: error)
             throw Self.mapIOError(error)
+        }
+    }
+
+    /// A USB bulk OUT transfer whose total length is an exact multiple of the endpoint's max packet
+    /// size needs a terminating Zero-Length Packet (USB 2.0 §5.8.3) — otherwise the device keeps
+    /// waiting for more data and never sends its response, so the upload times out and the
+    /// connection wedges. MTP responders depend on this; missing it is the classic cause of
+    /// "uploads of certain sizes hang". Best-effort.
+    private func sendZeroLengthPacketIfNeeded(totalBytes: Int) {
+        guard bulkOutMaxPacket > 0, totalBytes % bulkOutMaxPacket == 0 else { return }
+        var transferred = 0
+        do {
+            try bulkOut.__sendIORequest(with: NSMutableData(), bytesTransferred: &transferred, completionTimeout: 15)
+            Self.log.info("Sent ZLP to terminate \(totalBytes)-byte data phase (mps=\(self.bulkOutMaxPacket))")
+        } catch {
+            recoverHalt(bulkOut, after: error)
+            Self.log.error("ZLP send failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -251,12 +280,21 @@ public final class USBDevice: @unchecked Sendable {
             }
         }
 
+        // Terminate the data phase with a ZLP when its length is an exact multiple of the max
+        // packet size, or the device waits forever for more data and never responds.
+        if threwError == nil, state.firstError == nil {
+            sendZeroLengthPacketIfNeeded(totalBytes: total)
+        }
+
         // Stopping early (cancel / error / timeout) can leave USB requests in flight; abort them
         // so they finish now — otherwise the next transaction on this endpoint would collide. A
         // synchronous abort returns only once the aborted IO has completed.
-        if threwError != nil {
+        if let threwError {
             try? bulkOut.__abort(with: .synchronous)   // waits for aborted IO to finish
             _ = group.wait(timeout: .now() + 5)
+            // Clear the endpoint halt so the *next* MTP transaction can use the pipe; without this
+            // a failed upload leaves the whole connection dead ("Unable to send IO").
+            recoverHalt(bulkOut, after: threwError)
         }
 
         if let threwError { throw threwError }
@@ -269,6 +307,7 @@ public final class USBDevice: @unchecked Sendable {
         do {
             try bulkIn.__sendIORequest(with: buffer, bytesTransferred: &transferred, completionTimeout: timeout)
         } catch {
+            recoverHalt(bulkIn, after: error)
             throw Self.mapIOError(error)
         }
         return (buffer as Data).subdata(in: 0..<transferred)
@@ -282,6 +321,37 @@ public final class USBDevice: @unchecked Sendable {
             return .deviceStalled
         }
         return .usb(error.localizedDescription)
+    }
+
+    /// kIOReturnTimeout (0xE00002D6) as a signed 32-bit NSError code. A bulk *timeout* does not
+    /// halt the endpoint, so it must not trigger clearStall (which would reset the data toggle).
+    private static func isTimeout(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == "IOUSBHostErrorDomain" && ns.code == -536870186
+    }
+
+    /// Whether `error` likely left the bulk endpoint Halted (so clearStall must clear it).
+    /// Timeouts don't halt; cancellation is a deliberate abort (clearing would reset the toggle).
+    private static func haltsEndpoint(_ error: Error) -> Bool {
+        if isTimeout(error) { return false }
+        if error is CancellationError { return false }
+        if case TransportError.cancelled = error { return false }
+        return true
+    }
+
+    /// After a bulk IO error the USB endpoint transitions to Halted and *must* be cleared before
+    /// any further IO — otherwise every subsequent request fails with "Unable to send IO" and the
+    /// whole connection appears dead until a full re-enumeration. `clearStall` sends
+    /// CLEAR_FEATURE(ENDPOINT_HALT), aborts pending IO, and resets the data toggle. Best-effort;
+    /// timeouts and cancellations are skipped (the pipe isn't halted in those cases).
+    private func recoverHalt(_ pipe: IOUSBHostPipe, after error: Error) {
+        guard Self.haltsEndpoint(error) else { return }
+        do {
+            try pipe.clearStall()
+            Self.log.info("Cleared halted bulk endpoint after IO error")
+        } catch {
+            Self.log.error("clearStall failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Read one interrupt packet (events). Timeout must be 0 for interrupt pipes.
