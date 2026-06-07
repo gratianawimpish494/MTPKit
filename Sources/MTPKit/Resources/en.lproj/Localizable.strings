@@ -23,7 +23,7 @@
 "err.noDevice" = "No Android device found";
 "err.interfaceNotFound" = "No MTP interface found. Make sure the phone is in \"File Transfer\" mode";
 "err.protocolError" = "Protocol error: %@";
-"err.deviceStalled" = "The connection stalled. Attempting to reset…";
+"err.deviceStalled" = "The device stopped responding. Please try again.";
 "err.unknown" = "Unknown error";
 
 /* TransportError cases */

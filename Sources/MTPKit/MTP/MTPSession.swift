@@ -174,6 +174,8 @@ public actor MTPSession {
         head.u16(MTPOperation.sendObject.rawValue)
         head.u32(tx)
 
+        // Pipelined stream straight from the mmap'd file (memory stays bounded for multi-GB files).
+        // A terminating ZLP is appended inside when the length is a multiple of the max packet size.
         try device.writeDataPhaseStreaming(header: head.bytes, fileURL: fileURL, segmentSize: segmentSize,
                                            onProgress: onProgress)
 
