@@ -9,6 +9,8 @@ A dependency-free Swift package for talking to Android devices from macOS — br
 - A single `DeviceTransport` protocol for both backends, plus a `MockTransport` for tests and previews.
 - `async`/`await` throughout, `Sendable` value types, and a real-time `DeviceChange` event stream.
 - Streaming up/download with progress reporting; handles files larger than 4 GB.
+- **USB reliability built in**：data phases are terminated with a zero-length packet when their length is an exact multiple of the endpoint's max packet size（the classic "an upload of one specific size hangs forever" MTP failure）, halted bulk endpoints are cleared automatically after I/O errors instead of wedging the whole connection, and write draining is cancellation-aware and time-bounded so a stuck device can't freeze the session.
+- **Android-only discovery**：Apple devices expose PTP too（an iPhone's photo interface）, so discovery skips them — an attached iPhone never shadows the actual Android phone.
 - Zero third-party dependencies. Error messages localized in English and 繁體中文.
 
 ## Requirements
@@ -21,7 +23,7 @@ A dependency-free Swift package for talking to Android devices from macOS — br
 Swift Package Manager：
 
 ```swift
-.package(url: "https://github.com/5j54d93/MTPKit.git", from: "0.1.0")
+.package(url: "https://github.com/5j54d93/MTPKit.git", from: "0.1.4")
 ```
 
 Then add `"MTPKit"` to your target's dependencies.
